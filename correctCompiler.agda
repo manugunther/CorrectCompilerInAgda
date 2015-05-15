@@ -1,4 +1,4 @@
-module correctCompile where
+module correctCompiler where
 -- Del paper McKinna "A type-correct, stack-safe, provably correct, expression...
 
 open import Data.Bool
@@ -90,4 +90,3 @@ correct (If b Then e₁ Else e₂) st' = trans p₂ p₁
         p₂ with eval b
         p₂ | true = correct e₁ st'
         p₂ | false = correct e₂ st'
-             
