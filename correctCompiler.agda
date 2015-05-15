@@ -4,7 +4,6 @@ module correctCompiler where
 open import Data.Bool
 open import Data.Nat
 open import Data.Sum
-open import Data.Maybe
 open import Function
 open import Data.List
 open import Relation.Binary.PropositionalEquality
@@ -41,9 +40,6 @@ StackType = List Type
 data Stack : (s : StackType) → Set where
   ε   : Stack []
   _▹_ : ∀ {t} {s} → Val t → Stack s → Stack (t ∷ s)
-
-top : ∀ {t} {s} → Stack (t ∷ s) → Val t
-top (v ▹ st) = v
 
 -- Lenguaje compilado
 data Code : StackType → StackType → Set where
