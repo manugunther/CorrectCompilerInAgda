@@ -56,8 +56,8 @@ data Code : ∀ {st} {st'} → Stack st → Stack st' → Set where
               Code {bool ∷ st} {st'} (b ▹ s) (if b then s₁ else s₂)
 
 -- Ejecucion de código
-exec : ∀ {st} {st'} {s : Stack st} {s' : Stack st'} → Code s s' → Stack st'
-exec {st} {st'} {s} {s'} c = s'
+exec : ∀ {st} {st'} {s' : Stack st'} → (s : Stack st) → Code s s' →  Stack st'
+exec {st} {st'} {s'} s c = s'
 
 -- Propiedad del if
 prop : ∀ {θ : Set} {θ' : Set} {t₁ : θ} {t₂ : θ} → 
@@ -73,14 +73,14 @@ compile : ∀ {st} {t} → {s : Stack st} → (e : Expr t) → Code s (eval e �
 compile ∣ v ∣ = push v
 compile (e₁ ⊕ e₂) = compile e₂ , (compile e₁ , add)
 compile {st} {t} {s} (If e₁ Then e₂ Else e₃) = 
-        subst (λ s' → Code s s') (prop (λ v → v ▹ s) (eval e₁)) 
-              (compile e₁ , cond[ compile e₂ , compile e₃ ])
+             subst (λ s' → Code s s') (prop (λ v → v ▹ s) (eval e₁)) 
+                      (compile e₁ , cond[ compile e₂ , compile e₃ ])
 
+             
 -- Prueba de corrección trivial
 correct : ∀ {t} {st} → (e : Expr t) → (s : Stack st) →
-                    eval e ▹ s ≡ exec (compile e)
+                    eval e ▹ s ≡ exec s (compile e)
 correct e s = refl
-
 
 
 -- Algun ejemplo
@@ -92,4 +92,4 @@ evalExample : Expr bool → Expr nat → Val nat
 evalExample eb = eval ∘ exprExample eb
 
 execExample : ∀ {t} → Expr bool → Expr nat → Stack t → Stack (nat ∷ t)
-execExample {t} eb en s = exec {t} {nat ∷ t} {s} (compile (exprExample eb en))
+execExample {t} eb en s = exec {t} {nat ∷ t} s (compile (exprExample eb en))
