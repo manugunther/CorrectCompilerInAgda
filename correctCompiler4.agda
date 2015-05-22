@@ -58,16 +58,20 @@ data Statement : Set where
 
 
 
--- Evaluador de sentencias
-⟪_⟫_ : Statement → State → State
-⟪ x := e ⟫ σ               = σ [ x ← ⟦ e ⟧ σ ]
-⟪ s₁ , s₂ ⟫ σ              = ⟪ s₂ ⟫ (⟪ s₁ ⟫ σ)
-⟪ If e then s₁ else s₂ ⟫ σ = if ⟦ e ⟧ σ then ⟪ s₁ ⟫ σ
-                                           else ⟪ s₂ ⟫ σ
-⟪ for e do s ⟫ σ = rec (⟦ e ⟧ σ) s σ
-  where rec : ℕ → Statement → State → State
-        rec zero s' σ' = σ'
-        rec (suc n) s' σ' = rec n s' (⟪ s' ⟫ σ')
+mutual
+  -- Evaluador de sentencias
+  ⟪_⟫_ : Statement → State → State
+  ⟪ x := e ⟫ σ               = σ [ x ← ⟦ e ⟧ σ ]
+  ⟪ s₁ , s₂ ⟫ σ              = ⟪ s₂ ⟫ (⟪ s₁ ⟫ σ)
+  ⟪ If e then s₁ else s₂ ⟫ σ = if ⟦ e ⟧ σ then ⟪ s₁ ⟫ σ
+                                               else ⟪ s₂ ⟫ σ
+  ⟪ for e do s ⟫ σ = forRec (⟦ e ⟧ σ) s σ
+
+
+  forRec : ℕ → Statement → State → State
+  forRec zero s' σ'    = σ'
+  forRec (suc n) s' σ' = forRec n s' (⟪ s' ⟫ σ')
+
 
 {- StackType representa los tipos de los elementos que
    estan en el stack -}
@@ -125,6 +129,9 @@ compₑ (e₁ ⊕ e₂) = compₑ e₂ , (compₑ e₁ , add)
 compₑ (var x)   = load x
 
 
+-- Antes de dar el compilador de sentencias necesitamos algunas propiedades
+-- del If y de la función de iteración 'looprec'
+
 -- Propiedades del if
 propIf₁ : ∀ {θ : Set} {θ' : Set} {t₁ : θ} {t₂ : θ} {b : Bool} →
          (f : θ → θ') → 
@@ -140,7 +147,6 @@ propIf₂ {θ} {t} {t'} {b} t'≡t with b
 ... | true = refl
 ... | false = t'≡t
 
-
 propIf× : ∀ {A B : Set} → (b : Bool) → (t₁ : A × B) → 
            (t₂ : A × B) → proj₁ t₂ ≡ proj₁ t₁ →
            (if b then t₁ else t₂)
@@ -152,6 +158,23 @@ propIf× {A} {B} b t₁ t₂ p  =
                   (propIf₂ {A} {proj₁ t₁} {proj₁ t₂} {b} p)) 
            (propIf₁ {A × B} {B} {t₁} {t₂} {b} proj₂)
 
+
+-- Dos propiedades sobre la función de iteración looprec:
+propLoop₁ : ∀ {st} {n : ℕ} {f : State → State} → (sσ' : Conf st) →
+           proj₁ (looprec n (λ sσ → proj₁ sσ , f (proj₂ sσ)) sσ') ≡
+           proj₁ sσ'
+propLoop₁ {st} {zero} _         = refl
+propLoop₁ {st} {suc n} {f} (s , σ) = propLoop₁ {st} {n} {f} (s , f σ)
+
+
+propLoop₂ : ∀ {st} {n : ℕ} {c : Statement} → (sσ' : Conf st) →
+            proj₂ (looprec n (λ sσ → proj₁ sσ , ⟪ c ⟫ proj₂ sσ) sσ')
+            ≡
+            forRec n c (proj₂ sσ')
+propLoop₂ {st} {zero} _    = refl
+propLoop₂ {st} {suc n} {c} sσ' = propLoop₂ {st} {n} {c} 
+                                           (proj₁ sσ' , ⟪ c ⟫ proj₂ sσ')
+
 -- Postulado de Extensionalidad
 postulate pointwiseEq : ∀ {l} {A B : Set l} {f₁ : A → B} {f₂ : A → B}
                         → ((x : A) → f₁ x ≡ f₂ x) → f₁ ≡ f₂
@@ -161,16 +184,34 @@ compₛ : ∀ {st}  → (c : Statement) →
         Code st (λ {(s , σ) → (s , ⟪ c ⟫ σ)})
 compₛ (x := e)               = compₑ e , store x
 compₛ (s₁ , s₂)              = compₛ s₁ , compₛ s₂
-compₛ {st} (If e then s₁ else s₂) = 
-      subst (λ f → Code st f) (pointwiseEq aux')
-                              (compₑ e , cond[ compₛ s₁ , compₛ s₂ ]) 
-      where aux' : (sσ : Conf st) →
-                   (if ⟦ e ⟧ (proj₂ sσ) then (proj₁ sσ , ⟪ s₁ ⟫ proj₂ sσ)
-                                        else (proj₁ sσ , ⟪ s₂ ⟫ proj₂ sσ))
-                   ≡
-                   (proj₁ sσ , (if ⟦ e ⟧ (proj₂ sσ) then ⟪ s₁ ⟫ (proj₂ sσ)
-                                                   else ⟪ s₂ ⟫ (proj₂ sσ)))
-            aux' sσ = propIf× (⟦ e ⟧ proj₂ sσ) (proj₁ sσ , ⟪ s₁ ⟫ proj₂ sσ) 
-                                               (proj₁ sσ , ⟪ s₂ ⟫ proj₂ sσ)
-                                               refl
-compₛ (for e do c) = {!!} --compₑ e , loop (compₛ c)
+compₛ {st} (If e then s₁ else s₂) = pIf (compₑ e , cond[ compₛ s₁ , compₛ s₂ ]) 
+    
+      where pIf  : Code st (λ sσ → (if ⟦ e ⟧ (proj₂ sσ) 
+                                       then (proj₁ sσ , ⟪ s₁ ⟫ proj₂ sσ)
+                                       else (proj₁ sσ , ⟪ s₂ ⟫ proj₂ sσ))) →
+                   Code st (λ sσ → (proj₁ sσ , 
+                                    (if ⟦ e ⟧ (proj₂ sσ) then ⟪ s₁ ⟫ (proj₂ sσ)
+                                                        else ⟪ s₂ ⟫ (proj₂ sσ))))
+            pIf  = subst (λ f → Code st f) 
+                         (pointwiseEq (λ sσ → propIf× (⟦ e ⟧ proj₂ sσ)
+                                                    (proj₁ sσ , ⟪ s₁ ⟫ proj₂ sσ)
+                                                    (proj₁ sσ , ⟪ s₂ ⟫ proj₂ sσ)
+                                                    refl))
+
+compₛ {st} (for e do c) = pLoop (compₑ e , loop (compₛ c))
+
+      where pLoop : Code st (λ sσ → (looprec (⟦ e ⟧ proj₂ sσ) 
+                                            (λ r → proj₁ r , ⟪ c ⟫ proj₂ r) sσ))
+                    →
+                    Code st (λ sσ → (proj₁ sσ , ⟪ for e do c ⟫ proj₂ sσ))
+            pLoop = subst (λ f → Code st f)
+                          (pointwiseEq
+                            (λ sσ → cong₂ (λ x y → x , y)
+                                          (propLoop₁ {st}
+                                                     {⟦ e ⟧ proj₂ sσ}
+                                                     {λ σ' → ⟪ c ⟫ σ'}
+                                                     sσ)
+                                               (propLoop₂ {st}
+                                                          {⟦ e ⟧ proj₂ sσ}
+                                                          {c}
+                                                          sσ)))
